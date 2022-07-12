@@ -1,0 +1,19 @@
+name: bunny-cr
+version: 0.1.0
+
+authors:
+  - Askhat Saiapov <askhat.saiapov@gmail.com>
+
+targets:
+  bunny-cr:
+    main: src/bunny.cr
+
+crystal: 1.5.0-dev
+
+license: MIT
+
+dependencies:
+  kemal:
+    github: kemalcr/kemal
+  sqlite3:
+    github: crystal-lang/crystal-sqlite3
