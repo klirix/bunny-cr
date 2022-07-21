@@ -8,7 +8,6 @@ require "./event"
 # db = DB.open "sqlite3:./file.db"
 
 def runIn(span : Time::Span, &block : ->)
-  a = false
   spawn do
     sleep span
     block.call
@@ -24,7 +23,7 @@ class Bunny
   property grabWaiters = Hash(String, Array(Channel(Event))).new
   property processingEvents = Hash(UUID, Channel(UUID)).new
 
-  def initialize(@db = DB.open "sqlite3://%3Amemory%3A")
+  def initialize(@db = DB.open "sqlite3://bunni.sqlite")
     db.exec("
       create table if not exists events (
         id text primary key,
@@ -38,20 +37,25 @@ class Bunny
     db.exec("
       create index if not exists name_idx on events (streamName, at asc) where processing != 1;
     ")
+    @setProcessing = DB::PoolPreparedStatement.new(@db, "update events set processing = ? where id = ?")
+    @showStatement = DB::PoolPreparedStatement.new(@db, "select * from events")
     print "Bunny initialized\n"
   end
 
   def show
-    Event.from_rs(db.query("select * from events"))
+    rs = @showStatement.query
+    rs.each do
+      yield rs.read(Event)
+    end
   end
 
   def grab(streamName, timeout = 5000, ackTimeout = 5000)
     event = db.query_one? "select * from events where streamName = ? and processing != 1 order by at limit 1", streamName, as: Event
-    if event
-      db.exec("update events set processing = 1 where id = ?", event.not_nil!.id.to_s)
+    if localEvent = event
+      @setProcessing.exec(true, localEvent.id.to_s)
       runIn ackTimeout.milliseconds do
         puts "Timeout reached for #{streamName} req"
-        nack event.not_nil!.id, streamName
+        nack localEvent.id, streamName
       end
       return event
     end
@@ -77,7 +81,7 @@ class Bunny
       raise GrabTimeoutException.new "Grab timed out"
     when event = idChannel.receive
       runIn ackTimeout.milliseconds do
-        nack event.not_nil!.id, streamName
+        nack event.id, streamName
       end
       event
     end
@@ -101,7 +105,7 @@ class Bunny
   end
 
   def nack(uuid : UUID, streamName : String)
-    db.exec("update events set processing = 0 where id = ?", uuid.to_s)
+    @setProcessing.exec(0, uuid.to_s)
     if waiters = grabWaiters.[]?(streamName)
       return if waiters.size === 0
       if chan = waiters.pop

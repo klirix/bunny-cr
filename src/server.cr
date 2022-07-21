@@ -11,8 +11,13 @@ get "/" do
   "bunny"
 end
 
-get "/show" do
-  bunny.show.to_json
+get "/show" do |env|
+  builder = JSON::Builder.new(env.response)
+  builder.document do
+    builder.array do
+      bunny.show &.to_json(builder)
+    end
+  end
 end
 
 get "/grab" do |env|
@@ -25,8 +30,7 @@ get "/grab" do |env|
 end
 
 post "/post" do |env|
-  id = bunny.post env.params.json["streamName"].as(String), env.params.json["data"]
-  id.to_json
+  bunny.post(env.params.json["streamName"].as(String), env.params.json["data"]).to_json
 end
 
 post "/nack" do |env|
